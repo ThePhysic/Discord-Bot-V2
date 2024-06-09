@@ -29,6 +29,8 @@ const firstTargetChannelId = process.env.TARGET_CHANNEL_ID;
 const secondTargetChannelId = process.env.SECOND_TARGET_CHANNEL_ID;
 const thirdTargetChannelId = process.env.THIRD_TARGET_CHANNEL_ID;
 
+const deleteTodo = [false, false];
+
 
 // Event listener for when bot is ready:
 client.once("ready", async () => {
@@ -67,6 +69,25 @@ client.on("messageReactionAdd", async (reaction, user) => {
     if (reaction.emoji.name === thirdTargetEmoji) {
         emojiReactToSend(reaction.message, user, thirdTargetChannelId);
     }
+
+    // Check emojis for deleting todo:
+    const message = reaction.message.content;
+    const regex = /<@(\d+)>/g;
+
+    if (reaction.emoji.name === deleteTodoEmoji) {
+        if (message.match(regex)[0] === `<@${user.id}>`) {
+            deleteTodo[0] = true;
+        }
+        if (message.match(regex)[1] === `<@${user.id}>`) {
+            deleteTodo[1] = true;
+        }
+        if (deleteTodo[0] === true && deleteTodo[1] === true) {
+            reaction.message.delete();
+            deleteTodo[0] = false;
+            deleteTodo[1] = false;
+        }
+    }
+});
 });
 
 // Event listener for slash commands:
@@ -99,6 +120,22 @@ const emojiReactToSend = (message, user, targetChannelId, interaction = null) =>
     if (targetChannel && targetChannel.isTextBased()) {
         const messageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
         targetChannel.send(`**Message from ${message.author}**:\n**Sent over by ${user}**:\n${message.content}\n${messageLink}`);
+        if (interaction) {
+            interaction.reply(`Message pinned successfully to ${targetChannel.name}.`);
+        }
+    }
+    else {
+        console.error("Target channel not found or is not a text channel.");
+    }
+};
+
+// Function for sending todos:
+const sendTodo = (message, user, targetChannelId, interaction = null) => {
+    const targetChannel = client.channels.cache.get(targetChannelId);
+
+    if (targetChannel && targetChannel.isTextBased()) {
+        const messageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
+        targetChannel.send(`**Message from ${message.author}**:\n**Sent over by ${user}**:\n**TODO:** ${message.content}\n${messageLink}`);
         if (interaction) {
             interaction.reply(`Message pinned successfully to ${targetChannel.name}.`);
         }
