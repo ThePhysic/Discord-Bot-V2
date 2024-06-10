@@ -33,6 +33,7 @@ const TALKING_POINT_TARGET_CHANNEL_ID = process.env.TALKING_POINT_CHANNEL_ID;
 const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
 const USERNAME_REGEX = /<@(\d+)>/g;
 const TODO_REGEX = /TODO/;
+const TIME_IN_DAYS = 1000 * 60 * 60 * 24;
 const deleteTodo = [false, false];
 
 
@@ -144,6 +145,31 @@ client.on("messageCreate", async (message) => {
             }
             else if (message.content.match(TODO_REGEX)) {
                 sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
+            }
+
+            // Check if original message meets time threshold:
+            const messageAgeInDays = (Date.now() - originalMessage.createdTimestamp) / TIME_IN_DAYS;
+            const ageThresholdInDays = 7;
+
+            if (messageAgeInDays > ageThresholdInDays) {
+                //Include snippet of original message for context:
+                
+                let snippet = originalMessage.content;
+
+                if (originalMessage.content.length > CHAR_LENGTH) {
+                    const spaceIndex = originalMessage.content.indexOf(" ", 500);
+                    snippet = originalMessage.content.substring(0, spaceIndex) + "...";
+                }
+
+                const replyContext = `Replying to **${originalMessage.member.displayName}**: ${snippet}`;
+
+                // Send follow-up message with context: 
+                message.channel.send(`${replyContext}\n\n**Your reply:** ${message.content}\n${originalMessageLink}`);
+            }
+        }
+        catch (error) {
+            console.error("Something went wrong with fetching the original message: ", error);
+        }
             }
     // Add todo that isn't a reply:
     else if (message.content.match(TODO_REGEX)) {
