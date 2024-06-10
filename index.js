@@ -31,9 +31,17 @@ const UNREAD_TARGET_CHANNEL_ID = process.env.UNREAD_TARGET_CHANNEL_ID;
 const TODO_TARGET_CHANNEL_ID = process.env.TODO_TARGET_CHANNEL_ID;
 const TALKING_POINT_TARGET_CHANNEL_ID = process.env.TALKING_POINT_CHANNEL_ID;
 const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
+
 const USERNAME_REGEX = /<@(\d+)>/g;
 const TODO_REGEX = /TODO/;
+const TALKING_POINT_REGEX = /(Talking point|TP)/;
+const TIME_IN_DAYS = 1000 * 60 * 60 * 24;
+const CHAR_LENGTH = 500;
+const FIVE_MINUTES = 1000 * 60 * 5;
+
 const deleteTodo = [false, false];
+let talkingPointCount = 0;
+let callRecords = {};
 
 
 // Event listener for when bot is ready:
@@ -145,11 +153,119 @@ client.on("messageCreate", async (message) => {
             else if (message.content.match(TODO_REGEX)) {
                 sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
             }
+
+            // Check if original message meets time threshold:
+            const messageAgeInDays = (Date.now() - originalMessage.createdTimestamp) / TIME_IN_DAYS;
+            const ageThresholdInDays = 7;
+
+            if (messageAgeInDays > ageThresholdInDays) {
+                //Include snippet of original message for context:
+                
+                let snippet = originalMessage.content;
+
+                if (originalMessage.content.length > CHAR_LENGTH) {
+                    const spaceIndex = originalMessage.content.indexOf(" ", 500);
+                    snippet = originalMessage.content.substring(0, spaceIndex) + "...";
+                }
+
+                const replyContext = `Replying to **${originalMessage.member.displayName}**: ${snippet}`;
+
+                // Send follow-up message with context: 
+                message.channel.send(`${replyContext}\n\n**Your reply:** ${message.content}\n${originalMessageLink}`);
+            }
+        }
+        catch (error) {
+            console.error("Something went wrong with fetching the original message: ", error);
+        }
+    }
     // Add todo that isn't a reply:
     else if (message.content.match(TODO_REGEX)) {
         sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
     }
+
+    // Add talking point:
+    const content = message.content;
+    if (content.match(TALKING_POINT_REGEX)) {
+        try {
+            // Prompt user for title:
+            await message.reply("Please provide a title for this TP:");
+
+            // Create a message collector for the title:
+            const filter = (response) => {
+                return response.author.id === message.author.id;
+            };
+
+            const collector = new MessageCollector(message.channel, { time: 60000, max: 1, filter: filter });
+
+            // Event listener for receiving title:
+            collector.on("collect", async (response) => {
+                talkingPointCount++;
+                const title = `TP${String(talkingPointCount).padStart(2, "0")} - ${response.content}`;
+                const originalMessageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
+                const postContent = `${message.content}\n\n[Original Message](${originalMessageLink})`;
+
+                // Create new post in forums channel:
+                const forumChannel = client.channels.cache.get(TALKING_POINT_TARGET_CHANNEL_ID);
+        
+                if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
+                    return message.reply("Forum channel not found or not accessible.");
+                }
+
+                const newPost = await forumChannel.threads.create({
+                    name: title,
+                    message: {
+                        content: postContent,
+                        embeds: [
+                            new EmbedBuilder()
+                                .setTitle(title)
+                                .setDescription(postContent)
+                                .setColor('#0099ff')
+                        ]
+                    }
+                });
+
+                await message.reply(`Talking Point has been created: [${title}](${newPost.url})`);
+            });
+
+            // Event listener for end of collection:
+            collector.on("end", (collected) => {
+                if (collected.size === 0) {
+                    message.reply(`No title provided. Talking Point creation canceled.`);
+                }
+            });
+        }
+        catch (error) {
+            console.error(error);
+            message.reply(`An error occurred while creating the Talkiing Point.`);
+        }
     }
+});
+
+// Event listener for voice calls:
+client.on("voiceStateUpdate", (oldState, newState) => {
+    const userId = newState.member.id;
+
+    // User joins voice channel:
+    if (!oldState.channel && newState.channel) {
+        callRecords[userId] = {
+            startTime: Date.now(),
+            timeout: setTimeout(() => {
+                const voiceChannel = newState.channel;
+                const targetChannel = client.channels.cache.get(GENERAL_CHANNEL_ID);
+                if (voiceChannel instanceof VoiceChannel) {
+                    targetChannel.send(`Remember to take notes!`);
+                }
+            }, FIVE_MINUTES)
+        };
+    }
+
+    // User leaves voice channel:
+    if (oldState.channel && !newState.channel) {
+        const record = callRecords[userId];
+        if (record) {
+            clearTimeout(record.timeout);
+            delete callRecords[userId];
+        }
     }
 });
 
@@ -171,6 +287,103 @@ client.on("interactionCreate", async (interaction) => {
         catch (error) {
             console.error("Something went wrong when fetching the message: ", error);
             await interaction.reply("Failed to pin the message. Please check the message ID and try again.");
+        }
+    }
+
+    // Message count:
+    if (commandName === "messagecount") {
+        const user = options.getUser("user");
+        if (!user) {
+            await interaction.reply("User not found.");
+            return;
+        }
+
+        const { id: userId} = user;
+        const { user: { id: targetId } } = interaction;
+        
+        if (userId === client.user.id || userId === targetId) {
+            await interaction.reply("You cannot count messages to yourself or the bot.");
+            return;
+        }
+
+        await interaction.deferReply();
+
+        const channel = interaction.channel;
+        let messageCount = 0;
+        let lastMessageId = null;
+        let reachedTargetUser = false;
+
+        console.log(`Counting messages from ${interaction.user.username} to ${user.username}...`);
+
+        while (true) {
+            try {
+                const messages = await channel.messages.fetch({ limit: 100, before: lastMessageId });
+                if (messages.size === 0) {
+                    break;
+                }
+                
+                for (const [messageId, message] of messages) {
+                    console.log(`Checking message from ${message.author.username} at ${message.createdAt}`);
+                    if (message.author.id === userId) {
+                        reachedTargetUser = true;
+                        console.log(`Reached a message from ${user.username}, stopping count.`);
+                        break;
+                    }
+
+                    if (message.author.id === targetId) {
+                        messageCount++;
+                    }
+
+                    lastMessageId = messageId;
+                }
+
+                if (reachedTargetUser) {
+                    break;
+                }
+            }
+            catch (error) {
+                console.error("Error fetching messages: ", error);
+                break;
+            }
+        }
+
+        console.log(`Counted ${messageCount} messages from ${interaction.user.username} to ${user.username}.`);
+
+        await interaction.editReply(`You have sent ${messageCount} messages to ${user.username} since their last reply.`);
+    }
+
+    // Check message for replies:
+    if (commandName === "checkreply") {
+        const messageId = options.getString("messageid");
+
+        try {
+            const channel = interaction.channel;
+            const originalMessageLink = `https://discord.com/channels/${interaction.guildId}/${channel.id}/${messageId}`;
+
+            // Check for replies:
+            const replies = [];
+            const fetchedMessages = await channel.messages.fetch({ limit: 100 });
+            fetchedMessages.forEach((message) => {
+                if (message.reference && message.reference.messageId === messageId) {
+                    replies.push(message);
+                }
+            });
+
+            if (replies.length === 0) {
+                await interaction.reply(`This message ${originalMessageLink} has not been replied to.`);
+            }
+            else {
+                let replyText = `This message ${originalMessageLink} has been replied. Here are links to the replies:\n`;
+                replies.forEach((reply) => {
+                    const replyLink = `https://discord.com/channels/${interaction.guildId}/${channel.id}/${reply.id}`;
+                    replyText += `${replyLink}\n`;
+                });
+                await interaction.reply(replyText);
+            }
+        }
+        catch (error) {
+            console.error(error);
+            await interaction.reply(`An error occurred while fetching the message.`);
         }
     }
 });
