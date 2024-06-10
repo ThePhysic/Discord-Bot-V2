@@ -33,9 +33,11 @@ const TALKING_POINT_TARGET_CHANNEL_ID = process.env.TALKING_POINT_CHANNEL_ID;
 const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
 const USERNAME_REGEX = /<@(\d+)>/g;
 const TODO_REGEX = /TODO/;
+const TALKING_POINT_REGEX = /(Talking point|TP)/;
 const TIME_IN_DAYS = 1000 * 60 * 60 * 24;
 const CHAR_LENGTH = 500;
 const deleteTodo = [false, false];
+let talkingPointCount = 0;
 
 
 // Event listener for when bot is ready:
@@ -176,6 +178,65 @@ client.on("messageCreate", async (message) => {
     else if (message.content.match(TODO_REGEX)) {
         sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
     }
+
+    // Add talking point:
+    const content = message.content;
+    if (content.match(TALKING_POINT_REGEX)) {
+        try {
+            // Prompt user for title:
+            await message.reply("Please provide a title for this TP:");
+
+            // Create a message collector for the title:
+            const filter = (response) => {
+                return response.author.id === message.author.id;
+            };
+
+            const collector = new MessageCollector(message.channel, { time: 60000, max: 1, filter: filter });
+
+            // Event listener for receiving title:
+            collector.on("collect", async (response) => {
+                talkingPointCount++;
+                const title = `TP${String(talkingPointCount).padStart(2, "0")} - ${response.content}`;
+                const originalMessageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
+                const postContent = `${message.content}\n\n[Original Message](${originalMessageLink})`;
+
+                // Create new post in forums channel:
+                const forumChannel = client.channels.cache.get(TALKING_POINT_TARGET_CHANNEL_ID);
+        
+                if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
+                    return message.reply("Forum channel not found or not accessible.");
+                }
+
+                const newPost = await forumChannel.threads.create({
+                    name: title,
+                    message: {
+                        content: postContent,
+                        embeds: [
+                            new EmbedBuilder()
+                                .setTitle(title)
+                                .setDescription(postContent)
+                                .setColor('#0099ff')
+                        ]
+                    }
+                });
+
+                await message.reply(`Talking Point has been created: [${title}](${newPost.url})`);
+            });
+
+            // Event listener for end of collection:
+            collector.on("end", (collected) => {
+                if (collected.size === 0) {
+                    message.reply(`No title provided. Talking Point creation canceled.`);
+                }
+            });
+        }
+        catch (error) {
+            console.error(error);
+            message.reply(`An error occurred while creating the Talkiing Point.`);
+        }
+    }
+});
+
     }
     }
 });
