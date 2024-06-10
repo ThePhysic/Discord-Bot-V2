@@ -28,6 +28,18 @@ const commands = [
             },
         ],
     },
+    {
+        name: "checkreply", 
+        description: "Check if a message has been replied to", 
+        options: [
+            {
+                name: "messageid", 
+                type: 3, 
+                description: "The ID of the message to check", 
+                required: true,
+            },
+        ],
+    },
 ];
 
 // Register commands with Discord API: 

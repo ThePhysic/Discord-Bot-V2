@@ -200,6 +200,7 @@ client.on("interactionCreate", async (interaction) => {
             await interaction.reply("Failed to pin the message. Please check the message ID and try again.");
         }
     }
+
     // Message count:
     if (commandName === "messagecount") {
         const user = options.getUser("user");
@@ -260,6 +261,41 @@ client.on("interactionCreate", async (interaction) => {
         console.log(`Counted ${messageCount} messages from ${interaction.user.username} to ${user.username}.`);
 
         await interaction.editReply(`You have sent ${messageCount} messages to ${user.username} since their last reply.`);
+    }
+
+    // Check message for replies:
+    if (commandName === "checkreply") {
+        const messageId = options.getString("messageid");
+
+        try {
+            const channel = interaction.channel;
+            const originalMessageLink = `https://discord.com/channels/${interaction.guildId}/${channel.id}/${messageId}`;
+
+            // Check for replies:
+            const replies = [];
+            const fetchedMessages = await channel.messages.fetch({ limit: 100 });
+            fetchedMessages.forEach((message) => {
+                if (message.reference && message.reference.messageId === messageId) {
+                    replies.push(message);
+                }
+            });
+
+            if (replies.length === 0) {
+                await interaction.reply(`This message ${originalMessageLink} has not been replied to.`);
+            }
+            else {
+                let replyText = `This message ${originalMessageLink} has been replied. Here are links to the replies:\n`;
+                replies.forEach((reply) => {
+                    const replyLink = `https://discord.com/channels/${interaction.guildId}/${channel.id}/${reply.id}`;
+                    replyText += `${replyLink}\n`;
+                });
+                await interaction.reply(replyText);
+            }
+        }
+        catch (error) {
+            console.error(error);
+            await interaction.reply(`An error occurred while fetching the message.`);
+        }
     }
 });
 
