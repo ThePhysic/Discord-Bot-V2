@@ -34,6 +34,7 @@ const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
 const USERNAME_REGEX = /<@(\d+)>/g;
 const TODO_REGEX = /TODO/;
 const TIME_IN_DAYS = 1000 * 60 * 60 * 24;
+const CHAR_LENGTH = 500;
 const deleteTodo = [false, false];
 
 
@@ -198,6 +199,67 @@ client.on("interactionCreate", async (interaction) => {
             console.error("Something went wrong when fetching the message: ", error);
             await interaction.reply("Failed to pin the message. Please check the message ID and try again.");
         }
+    }
+    // Message count:
+    if (commandName === "messagecount") {
+        const user = options.getUser("user");
+        if (!user) {
+            await interaction.reply("User not found.");
+            return;
+        }
+
+        const { id: userId} = user;
+        const { user: { id: targetId } } = interaction;
+        
+        if (userId === client.user.id || userId === targetId) {
+            await interaction.reply("You cannot count messages to yourself or the bot.");
+            return;
+        }
+
+        await interaction.deferReply();
+
+        const channel = interaction.channel;
+        let messageCount = 0;
+        let lastMessageId = null;
+        let reachedTargetUser = false;
+
+        console.log(`Counting messages from ${interaction.user.username} to ${user.username}...`);
+
+        while (true) {
+            try {
+                const messages = await channel.messages.fetch({ limit: 100, before: lastMessageId });
+                if (messages.size === 0) {
+                    break;
+                }
+                
+                for (const [messageId, message] of messages) {
+                    console.log(`Checking message from ${message.author.username} at ${message.createdAt}`);
+                    if (message.author.id === userId) {
+                        reachedTargetUser = true;
+                        console.log(`Reached a message from ${user.username}, stopping count.`);
+                        break;
+                    }
+
+                    if (message.author.id === targetId) {
+                        messageCount++;
+                    }
+
+                    lastMessageId = messageId;
+                }
+
+                if (reachedTargetUser) {
+                    break;
+                }
+            }
+            catch (error) {
+                console.error("Error fetching messages: ", error);
+                break;
+            }
+        }
+
+        console.log(`Counted ${messageCount} messages from ${interaction.user.username} to ${user.username}.`);
+
+        await interaction.editReply(`You have sent ${messageCount} messages to ${user.username} since their last reply.`);
     }
 });
 
