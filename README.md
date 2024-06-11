@@ -1,6 +1,8 @@
 # About
 
-An advanced Discord Bot for enhancing user-experience through the implementation of numerous quality of life improvements using Discord.js v13.
+Discord Butler is a Discord Bot using Discord.js v13.
+
+Implements several quality-of-life improvements in enhancing the user experience. 
 
 # Getting Started
 
