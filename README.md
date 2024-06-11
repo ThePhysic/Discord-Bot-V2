@@ -70,13 +70,6 @@ Feel free to fork this repo and change the code however you like! Make a pull re
 </details>
 
 <details>
-  <summary>🚧  Count your messages since another user last replied (In progress)</summary>
-
-  - Enter /message count and user ID to find out how many messages you've sent them since they last replied.
-  - Currently limited to last 100 messages sent in chat.
-</details>
-
-<details>
   <summary>✅ Check if a message has been responded to (Completed)</summary>
 
   - Enter /checkreply and message ID to find out if a message has been replied to.
@@ -95,6 +88,13 @@ Feel free to fork this repo and change the code however you like! Make a pull re
 
   - If you're in a call for longer than 5 minutes, Discord Butler will send you a reminder to take some notes.
   - This message is easily customizable to anyway you see fit.
+</details>
+
+<details>
+  <summary>🚧  Count your messages since another user last replied (In progress)</summary>
+
+  - Enter /message count and user ID to find out how many messages you've sent them since they last replied.
+  - Currently limited to last 100 messages sent in chat.
 </details>
 
 <details>
