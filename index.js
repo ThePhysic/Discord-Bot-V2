@@ -287,6 +287,22 @@ client.on("voiceStateUpdate", (oldState, newState) => {
     }
 });
 
+// Event listener for message updates:
+client.on("messageUpdate", async (oldMessage, newMessage) => {
+    try {
+        if (!oldMessage.pinned && newMessage.pinned) {
+            const pinnedMessages = await newMessage.channel.messages.fetchPinned();
+            const pinnedMessageCount = pinnedMessages.size;
+            if (pinnedMessageCount >= 40) {
+                newMessage.channel.send(`Warning: The number of pinned messages is nearing its limit. Current count: ${pinnedMessageCount}`);
+            }
+        }
+    }
+    catch (error) {
+        console.error("Error fetching pinned messages: ", error);
+    }
+});
+
 // Event listener for slash commands:
 client.on("interactionCreate", async (interaction) => {
     if (!interaction.isCommand) {
