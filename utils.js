@@ -16,6 +16,30 @@ const commands = [
             },
         ],
     },
+    {
+        name: "messagecount", 
+        description: "Check how many messages you have sent to a user since their last reply", 
+        options: [
+            {
+                name: "user", 
+                type: 6, 
+                description: "The user to check the message count for", 
+                required: true, 
+            },
+        ],
+    },
+    {
+        name: "checkreply", 
+        description: "Check if a message has been replied to", 
+        options: [
+            {
+                name: "messageid", 
+                type: 3, 
+                description: "The ID of the message to check", 
+                required: true,
+            },
+        ],
+    },
 ];
 
 // Register commands with Discord API: 
