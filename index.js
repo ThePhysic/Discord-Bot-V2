@@ -43,8 +43,6 @@ const deleteTodo = [false, false];
 let talkingPointCount = 0;
 let callRecords = {};
 
-const deleteTodo = [false, false];
-
 
 // Event listener for when bot is ready:
 client.once("ready", async () => {
@@ -287,7 +285,6 @@ client.on("voiceStateUpdate", (oldState, newState) => {
             deleteTodo[1] = false;
         }
     }
-});
 });
 
 // Event listener for slash commands:
