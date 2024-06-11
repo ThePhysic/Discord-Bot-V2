@@ -267,6 +267,40 @@ client.on("voiceStateUpdate", (oldState, newState) => {
             delete callRecords[userId];
         }
     }
+
+    // Check emojis for deleting todo:
+    const message = reaction.message.content;
+    const regex = /<@(\d+)>/g;
+
+    if (reaction.emoji.name === deleteTodoEmoji) {
+        if (message.match(regex)[0] === `<@${user.id}>`) {
+            deleteTodo[0] = true;
+        }
+        if (message.match(regex)[1] === `<@${user.id}>`) {
+            deleteTodo[1] = true;
+        }
+        if (deleteTodo[0] === true && deleteTodo[1] === true) {
+            reaction.message.delete();
+            deleteTodo[0] = false;
+            deleteTodo[1] = false;
+        }
+    }
+});
+
+// Event listener for message updates:
+client.on("messageUpdate", async (oldMessage, newMessage) => {
+    try {
+        if (!oldMessage.pinned && newMessage.pinned) {
+            const pinnedMessages = await newMessage.channel.messages.fetchPinned();
+            const pinnedMessageCount = pinnedMessages.size;
+            if (pinnedMessageCount >= 40) {
+                newMessage.channel.send(`Warning: The number of pinned messages is nearing its limit. Current count: ${pinnedMessageCount}`);
+            }
+        }
+    }
+    catch (error) {
+        console.error("Error fetching pinned messages: ", error);
+    }
 });
 
 // Event listener for slash commands:
