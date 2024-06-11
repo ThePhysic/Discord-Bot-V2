@@ -97,6 +97,8 @@ Feel free to fork this repo and change the code however you like! Make a pull re
   - This message is easily customizable to anyway you see fit.
 </details>
 
-   <summary>More features still in the works!</summary>
+<details>
+  <summary>More features still in the works!</summary>
+</details>
 
 <!-- Continue adding other sections as needed, following the same format -->
