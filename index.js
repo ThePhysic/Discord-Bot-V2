@@ -31,13 +31,17 @@ const UNREAD_TARGET_CHANNEL_ID = process.env.UNREAD_TARGET_CHANNEL_ID;
 const TODO_TARGET_CHANNEL_ID = process.env.TODO_TARGET_CHANNEL_ID;
 const TALKING_POINT_TARGET_CHANNEL_ID = process.env.TALKING_POINT_CHANNEL_ID;
 const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
+
 const USERNAME_REGEX = /<@(\d+)>/g;
 const TODO_REGEX = /TODO/;
 const TALKING_POINT_REGEX = /(Talking point|TP)/;
 const TIME_IN_DAYS = 1000 * 60 * 60 * 24;
 const CHAR_LENGTH = 500;
+const FIVE_MINUTES = 1000 * 60 * 5;
+
 const deleteTodo = [false, false];
 let talkingPointCount = 0;
+let callRecords = {};
 
 
 // Event listener for when bot is ready:
@@ -173,7 +177,7 @@ client.on("messageCreate", async (message) => {
         catch (error) {
             console.error("Something went wrong with fetching the original message: ", error);
         }
-            }
+    }
     // Add todo that isn't a reply:
     else if (message.content.match(TODO_REGEX)) {
         sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
@@ -237,7 +241,31 @@ client.on("messageCreate", async (message) => {
     }
 });
 
+// Event listener for voice calls:
+client.on("voiceStateUpdate", (oldState, newState) => {
+    const userId = newState.member.id;
+
+    // User joins voice channel:
+    if (!oldState.channel && newState.channel) {
+        callRecords[userId] = {
+            startTime: Date.now(),
+            timeout: setTimeout(() => {
+                const voiceChannel = newState.channel;
+                const targetChannel = client.channels.cache.get(GENERAL_CHANNEL_ID);
+                if (voiceChannel instanceof VoiceChannel) {
+                    targetChannel.send(`Remember to take notes!`);
+                }
+            }, FIVE_MINUTES)
+        };
     }
+
+    // User leaves voice channel:
+    if (oldState.channel && !newState.channel) {
+        const record = callRecords[userId];
+        if (record) {
+            clearTimeout(record.timeout);
+            delete callRecords[userId];
+        }
     }
 });
 
