@@ -177,7 +177,7 @@ client.on("messageCreate", async (message) => {
         catch (error) {
             console.error("Something went wrong with fetching the original message: ", error);
         }
-            }
+    }
     // Add todo that isn't a reply:
     else if (message.content.match(TODO_REGEX)) {
         sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
@@ -265,7 +265,7 @@ client.on("voiceStateUpdate", (oldState, newState) => {
         if (record) {
             clearTimeout(record.timeout);
             delete callRecords[userId];
-    }
+        }
     }
 });
 
