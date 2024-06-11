@@ -1,8 +1,6 @@
 # About
 
-A simple starter template for creating a Discord bot using Discord.js v13.
-
-Currently this does not support slash commands, but will be updated with support later on.
+An advanced Discord Bot for enhancing user-experience through the implementation of numerous quality of life improvements using Discord.js v13.
 
 # Getting Started
 
