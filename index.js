@@ -35,18 +35,50 @@ const GENERAL_CHANNEL_ID = process.env.GENERAL_CHANNEL_ID;
 const USERNAME_REGEX = /<@(\d+)>/g;
 const TODO_REGEX = /TODO/;
 const TALKING_POINT_REGEX = /(Talking point|TP)/;
+const AGE_THRESHOLD_IN_DAYS = 7;
 const TIME_IN_DAYS = 1000 * 60 * 60 * 24;
 const CHAR_LENGTH = 500;
 const FIVE_MINUTES = 1000 * 60 * 5;
+const SIXTY_THOUSAND = 60000;
 
-const deleteTodo = [false, false];
-let talkingPointCount = 0;
+const approvedBy = {
+    author: false, 
+    sender: false, 
+};
+const emojiChannelMap = {
+    [PIN_TARGET_EMOJI]: PIN_TARGET_CHANNEL_ID, 
+    [UNREAD_TARGET_EMOJI]: UNREAD_TARGET_CHANNEL_ID, 
+    [TODO_TARGET_EMOJI]: TODO_TARGET_CHANNEL_ID,
+};
+
+let talkingPointCounter = 0;
 let callRecords = {};
+let messageCounter = 0;
 
 
 // Event listener for when bot is ready:
 client.once("ready", async () => {
     console.log(`Logged in as ${client.user.displayName}!`);
+
+    // Fetch forum channel:
+    const forumChannel = client.channels.cache.get(TALKING_POINT_TARGET_CHANNEL_ID);
+
+    if (!forumChannel || forumChannel.type !== ChannelType.GuildForum) {
+        console.error("Forum channel not found or is not a forum channel.");
+        return;
+}
+    // Fetch active threads:
+    const activeThreads = await forumChannel.threads.fetchActive();
+
+    // Fetch archived threads:
+    const archivedThreads = await forumChannel.threads.fetch({
+        archived: {
+            fetchAll: true,
+        },
+    });
+
+    // Get talking point cuount:
+    talkingPointCounter = talkingPointCount(activeThreads, archivedThreads);
 });
 
 // Event listener for reactions added to messages:
@@ -56,7 +88,7 @@ client.on("messageReactionAdd", async (reaction, user) => {
         return;
     }
 
-    // Fetch partials if necessary:
+    // Fetch full version if partial:
     if (reaction.partial) {
         try {
             await reaction.fetch();
@@ -67,35 +99,30 @@ client.on("messageReactionAdd", async (reaction, user) => {
         }
     }
 
-    // Check if reaction emoji matches first target emoji:
-    if (reaction.emoji.name === PIN_TARGET_EMOJI) {
-        emojiReactToSend(reaction.message, user, PIN_TARGET_CHANNEL_ID);
-    }
-
-    // Check if reaction emoji matches second target emoji:
-    if (reaction.emoji.name === UNREAD_TARGET_EMOJI) {
-        emojiReactToSend(reaction.message, user, UNREAD_TARGET_CHANNEL_ID);
-    }
-
-    // Check if reaction emoji matches third target emoji:
-    if (reaction.emoji.name === TODO_TARGET_EMOJI) {
-        emojiReactToSend(reaction.message, user, TODO_TARGET_CHANNEL_ID);
+    // Check if reaction emoji is in mapping object:
+    const targetChannelId = emojiChannelMap[reaction.emoji.name];
+    if (targetChannelId) {
+        emojiReactToSend(reaction.message, user, targetChannelId);
     }
 
     // Check emojis for deleting todo:
     const message = reaction.message.content;
+    const userId = `<@${user.id}>`;
+    const matchRegex = message.match(USERNAME_REGEX);
 
     if (reaction.emoji.name === DELETE_TODO_EMOJI) {
-        if (message.match(USERNAME_REGEX)[0] === `<@${user.id}>`) {
-            deleteTodo[0] = true;
+        // Author approved:
+        if (matchRegex[0] === userId) {
+            approvedBy.author = true;
         }
-        if (message.match(USERNAME_REGEX)[1] === `<@${user.id}>`) {
-            deleteTodo[1] = true;
+        // Sender approved:
+        if (matchRegex[1] === userId) {
+            approvedBy.sender = true;
         }
-        if (deleteTodo[0] === true && deleteTodo[1] === true) {
+        if (approvedBy.author === true && approvedBy.sender === true) {
             reaction.message.delete();
-            deleteTodo[0] = false;
-            deleteTodo[1] = false;
+            approvedBy.author = false;
+            approvedBy.sender = false;
         }
     }
 });
@@ -107,7 +134,7 @@ client.on("messageReactionRemove", async (reaction, user) => {
         return;
     }
 
-    // Fetch partials if necessary:
+    // Fetch full version if partial:
     if (reaction.partial) {
         try {
             await reaction.fetch();
@@ -118,14 +145,21 @@ client.on("messageReactionRemove", async (reaction, user) => {
         }
     }
 
-    // Check emojis removed for deleting todo:
     const message = reaction.message.content;
+    const targetChannel = client.channels.cache.get(TODO_TARGET_CHANNEL_ID);
+    const userId = `<@${user.id}>`;
+    const matchRegex = message.match(USERNAME_REGEX);
 
-    if (message.match(USERNAME_REGEX)[0] === `<@${user.id}>`) {
-        deleteTodo[0] = false;
+    // Check emojis removed for deleting todo:
+    if (message.channel === targetChannel) {
+        // Author changed their mind:
+        if (matchRegex[0] === userId) {
+            approvedBy.author = false;
     }
-    if (message.match(USERNAME_REGEX)[1] === `<@${user.id}>`) {
-        deleteTodo[1] = false;
+        // Sender changed their mind:
+        if (matchRegex[1] === userId) {
+            approvedBy.sender = false;
+        }
     }
 });
 
@@ -148,23 +182,22 @@ client.on("messageCreate", async (message) => {
 
             // Add todo:
             if (message.content.substring(0, 5).match(TODO_REGEX)) {
-                sendTodo(originalMessage, message.author, TODO_TARGET_CHANNEL_ID);
+                emojiReactToSend(originalMessage, message.author, TODO_TARGET_CHANNEL_ID);
             }
             else if (message.content.match(TODO_REGEX)) {
-                sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
+                emojiReactToSend(message, message.author, TODO_TARGET_CHANNEL_ID);
             }
 
             // Check if original message meets time threshold:
             const messageAgeInDays = (Date.now() - originalMessage.createdTimestamp) / TIME_IN_DAYS;
-            const ageThresholdInDays = 7;
 
-            if (messageAgeInDays > ageThresholdInDays) {
+            if (messageAgeInDays > AGE_THRESHOLD_IN_DAYS) {
                 //Include snippet of original message for context:
                 
                 let snippet = originalMessage.content;
 
                 if (originalMessage.content.length > CHAR_LENGTH) {
-                    const spaceIndex = originalMessage.content.indexOf(" ", 500);
+                    const spaceIndex = originalMessage.content.indexOf(" ", CHAR_LENGTH);
                     snippet = originalMessage.content.substring(0, spaceIndex) + "...";
                 }
 
@@ -180,7 +213,7 @@ client.on("messageCreate", async (message) => {
     }
     // Add todo that isn't a reply:
     else if (message.content.match(TODO_REGEX)) {
-        sendTodo(message, message.author, TODO_TARGET_CHANNEL_ID);
+        emojiReactToSend(message, message.author, TODO_TARGET_CHANNEL_ID);
     }
 
     // Add talking point:
@@ -195,12 +228,12 @@ client.on("messageCreate", async (message) => {
                 return response.author.id === message.author.id;
             };
 
-            const collector = new MessageCollector(message.channel, { time: 60000, max: 1, filter: filter });
+            const collector = new MessageCollector(message.channel, { time: SIXTY_THOUSAND, max: 1, filter: filter });
 
             // Event listener for receiving title:
             collector.on("collect", async (response) => {
-                talkingPointCount++;
-                const title = `TP${String(talkingPointCount).padStart(2, "0")} - ${response.content}`;
+                talkingPointCounter++;
+                const title = `TP${String(talkingPointCounter).padStart(2, "0")} - ${response.content}`;
                 const originalMessageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
                 const postContent = `${message.content}\n\n[Original Message](${originalMessageLink})`;
 
@@ -243,29 +276,50 @@ client.on("messageCreate", async (message) => {
 
 // Event listener for voice calls:
 client.on("voiceStateUpdate", (oldState, newState) => {
-    const userId = newState.member.id;
+    const oldUserChannel = oldState.channel;
+    const newUserChannel = newState.channel;
 
     // User joins voice channel:
-    if (!oldState.channel && newState.channel) {
-        callRecords[userId] = {
+    if (!oldUserChannel && newUserChannel) {
+        const callId = newUserChannel.id;
+        if (!callRecords[callId]) {
+            callRecords[callId] = {
             startTime: Date.now(),
             timeout: setTimeout(() => {
-                const voiceChannel = newState.channel;
                 const targetChannel = client.channels.cache.get(GENERAL_CHANNEL_ID);
-                if (voiceChannel instanceof VoiceChannel) {
+                    if (newUserChannel instanceof VoiceChannel) {
                     targetChannel.send(`Remember to take notes!`);
                 }
-            }, FIVE_MINUTES)
+                }, 3000)
         };
+        }
     }
 
     // User leaves voice channel:
-    if (oldState.channel && !newState.channel) {
-        const record = callRecords[userId];
-        if (record) {
-            clearTimeout(record.timeout);
-            delete callRecords[userId];
+    if (oldUserChannel && !newUserChannel) {
+        const callId = oldUserChannel.id;
+        const remainingUsers = oldUserChannel.members.size;
+
+        if (remainingUsers === 0 && callRecords[callId]) {
+            clearTimeout(callRecords[callId].timeout);
+            delete callRecords[callId];
         }
+    }
+});
+
+// Event listener for message updates:
+client.on("messageUpdate", async (oldMessage, newMessage) => {
+    try {
+        if (!oldMessage.pinned && newMessage.pinned) {
+            const pinnedMessages = await newMessage.channel.messages.fetchPinned();
+            const pinnedMessageCount = pinnedMessages.size;
+            if (pinnedMessageCount >= 40) {
+                newMessage.channel.send(`Warning: The number of pinned messages is nearing its limit. Current count: ${pinnedMessageCount}`);
+            }
+        }
+    }
+    catch (error) {
+        console.error("Error fetching pinned messages: ", error);
     }
 });
 
@@ -309,47 +363,19 @@ client.on("interactionCreate", async (interaction) => {
         await interaction.deferReply();
 
         const channel = interaction.channel;
-        let messageCount = 0;
         let lastMessageId = null;
         let reachedTargetUser = false;
 
         console.log(`Counting messages from ${interaction.user.username} to ${user.username}...`);
 
-        while (true) {
-            try {
+        while (!reachedTargetUser) {
                 const messages = await channel.messages.fetch({ limit: 100, before: lastMessageId });
-                if (messages.size === 0) {
-                    break;
-                }
-                
-                for (const [messageId, message] of messages) {
-                    console.log(`Checking message from ${message.author.username} at ${message.createdAt}`);
-                    if (message.author.id === userId) {
-                        reachedTargetUser = true;
-                        console.log(`Reached a message from ${user.username}, stopping count.`);
-                        break;
-                    }
-
-                    if (message.author.id === targetId) {
-                        messageCount++;
-                    }
-
-                    lastMessageId = messageId;
-                }
-
-                if (reachedTargetUser) {
-                    break;
-                }
-            }
-            catch (error) {
-                console.error("Error fetching messages: ", error);
-                break;
-            }
+            reachedTargetUser = messageCount(user, userId, targetId, messages, lastMessageId);
         }
 
-        console.log(`Counted ${messageCount} messages from ${interaction.user.username} to ${user.username}.`);
+        console.log(`Counted ${messageCounter} messages from ${interaction.user.username} to ${user.username}.`);
 
-        await interaction.editReply(`You have sent ${messageCount} messages to ${user.username} since their last reply.`);
+        await interaction.editReply(`You have sent ${messageCounter} messages to ${user.username} since their last reply.`);
     }
 
     // Check message for replies:
@@ -395,7 +421,8 @@ const emojiReactToSend = (message, user, targetChannelId, interaction = null) =>
 
     if (targetChannel && targetChannel.isTextBased()) {
         const messageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
-        targetChannel.send(`**Message from ${message.author}**:\n**Sent over by ${user}**:\n${message.content}\n${messageLink}`);
+        const messageContent = targetChannelId === TODO_TARGET_CHANNEL_ID ? `**Message from ${message.author}**:\n**Sent over by ${user}**:\n**TODO:** ${message.content}\n${messageLink}` : `**Message from ${message.author}**:\n**Sent over by ${user}**:\n${message.content}\n${messageLink}`;
+        targetChannel.send(messageContent);
         if (interaction) {
             interaction.reply(`Message pinned successfully to ${targetChannel.name}.`);
         }
@@ -405,19 +432,65 @@ const emojiReactToSend = (message, user, targetChannelId, interaction = null) =>
     }
 };
 
-// Function for sending todos:
-const sendTodo = (message, user, targetChannelId, interaction = null) => {
-    const targetChannel = client.channels.cache.get(targetChannelId);
+// Function for message count:
+const messageCount = (user, userId, targetId, messages, lastMessageId) => {
+    let reachedTargetUser = false;
+    try {
+        // If there are no messages from that user:
+        if (messages.size === 0) {
+            return;
+        }
+            
+        for (const [messageId, message] of messages) {
+            console.log(`Checking message from ${message.author.username} at ${message.createdAt}`);
+            if (message.author.id === userId) {
+                reachedTargetUser = true;
+                console.log(`Reached a message from ${user.username}, stopping count.`);
+                return reachedTargetUser;
+            }
 
-    if (targetChannel && targetChannel.isTextBased()) {
-        const messageLink = `https://discord.com/channels/${message.guildId}/${message.channelId}/${message.id}`;
-        targetChannel.send(`**Message from ${message.author}**:\n**Sent over by ${user}**:\n**TODO:** ${message.content}\n${messageLink}`);
-        if (interaction) {
-            interaction.reply(`Message pinned successfully to ${targetChannel.name}.`);
+            if (message.author.id === targetId) {
+                messageCounter++;
+            }
+
+            lastMessageId = messageId;
+        }
+
+        if (reachedTargetUser) {
+            return reachedTargetUser;
         }
     }
+    catch (error) {
+        console.error("Error fetching messages: ", error);
+        return;
+    }
+};
+
+// Function to check talking point count:
+const talkingPointCount = (activeThreads, archivedThreads) => {
+    const TALKING_POINT_COUNT_REGEX = /\d+/;
+
+    try {
+        // Combine active and archived threads:
+        const allThreads = activeThreads.threads.concat(archivedThreads.threads);
+
+        // Sort threads by creation time and access latest one:
+        const latestThread = allThreads.sort((a, b) => b.createdAt - a.createdAt).first();
+
+        // Get last talking point number from title:
+        let postCount = 0;
+
+        if (latestThread) {
+            postCount = parseInt(latestThread.name.match(TALKING_POINT_COUNT_REGEX)[0]);
+            return postCount;
+    }
     else {
-        console.error("Target channel not found or is not a text channel.");
+            console.log("No threads found in the forums channel.");
+            return postCount;
+        }
+    }
+    catch (error) {
+        console.error("Error fetching threads: ", error);
     }
 };
 
